@@ -49,7 +49,12 @@ function setup() {
  */
 function computeGridSize() {
     rows = 27;
-    cols = max(8, floor(rows * width / height));
+    // Round to the nearest column count, not floor: floor under-counts
+    // when the exact count is just above an integer (e.g. 81.8 -> 81),
+    // leaving almost a whole cell uncovered. Rounding picks the count
+    // closest to the true aspect ratio, minimising the leftover strip
+    // on either side (at most about half a cell, usually far less).
+    cols = max(8, round(rows * width / height));
     // Calculate cell size based on rows and cols to fit the screen
     cellSize = min(width / cols, height / rows);
 }
