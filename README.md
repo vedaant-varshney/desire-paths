@@ -5,8 +5,7 @@
 - Clone code from repository
 - Start VSCode Live Server from root
 - Navigate to `sketch-a3` from locally hosted menu
-- Ensure aspect ratio of screen is 16:9 for proper grid alignment. Otherwise, edit the rows and columns of `sketch.js:setup()` accordingly based on custom aspect ratio
-    - If this is not set, certain screen sizes may not properly fill the grid 
+- The grid now adapts to the screen's aspect ratio: rows stay at 27 and the number of columns is derived from the actual width and height, so the grid fills the screen on any aspect ratio (at 16:9 this is exactly the old 27x48 grid). Resizing the window rebuilds the scene for the new size, after a short debounce.
 - Ensure full screen for smooth transitions
 
 ### Formal Qualities

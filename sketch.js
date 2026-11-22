@@ -24,6 +24,8 @@ let animProperties = {
 };
 
 
+let resizeTimer = null;
+
 function setup() {
     createCanvas(windowWidth, windowHeight);
 
@@ -32,7 +34,44 @@ function setup() {
     transitionBuffer = createGraphics(width, height);
     blurBuffer = createGraphics(width, height);
 
-    // Create one-time noise texture for background
+    populateNoiseBuffer();
+
+    // First grid goes from left to right with random row value
+    buildScene(null, null);
+}
+
+
+/**
+ * Derive the grid size from the actual canvas aspect ratio, instead of
+ * assuming 16:9. Rows stay at 27; cols are derived from the aspect ratio,
+ * so the grid fills the width and the height (to within one cell) on any
+ * screen size. At 16:9 this gives exactly the old values: 27 rows, 48 cols.
+ */
+function computeGridSize() {
+    rows = 27;
+    cols = max(8, floor(rows * width / height));
+    // Calculate cell size based on rows and cols to fit the screen
+    cellSize = min(width / cols, height / rows);
+}
+
+
+/**
+ * Minimum Manhattan distance between a scene's start and end points.
+ * Was a fixed 25, which is a large fraction of a small (e.g. portrait)
+ * grid and can make transition() loop for a long time. Scale it with
+ * the grid size; at 27x48 this is still 25.
+ */
+function minEndpointDistance() {
+    return min(25, floor((rows + cols) / 3));
+}
+
+
+/**
+ * Create the one-time noise texture for the background, sized to the
+ * current canvas. Called from setup() and from rebuildForNewSize().
+ */
+function populateNoiseBuffer() {
+    noiseBuffer.clear();
     let noiseAmount = floor(width * height * 0.02); // noise density based on screen size
     for (let i = 0; i < noiseAmount; i++) {
         noiseBuffer.noStroke()
@@ -41,20 +80,75 @@ function setup() {
         noiseBuffer.fill(random(NOISE_COLOR), 50)
         noiseBuffer.rect(x, y, 2, 2);
     }
-
-    // Hardcode rows to be divisible by 9 for clean cell size at 16:9 ratio, calculate cols based on number of rows 
-    rows = 27;
-    cols = ceil((rows / 9) * 16);
-    // Calculate cell size based on rows and cols to fit the screen
-    cellSize = min(width / cols, height / rows);
+}
 
 
-    // First grid goes from left to right with random col value
-    grid = new Grid(rows, cols, [floor(random(1, rows - 1)), 0], [floor(random(1, rows - 1)), cols - 1], pathBuffer, blurBuffer);
+/**
+ * Build a fresh scene for the current canvas size. startPoint is
+ * [row, col]; if endPoint is null, a random end point on the right edge
+ * is chosen, as in the original setup().
+ */
+function buildScene(startPoint, endPoint) {
+    computeGridSize();
+
+    if (startPoint === null) {
+        startPoint = [floor(random(1, rows - 1)), 0];
+    }
+    if (endPoint === null) {
+        endPoint = [floor(random(1, rows - 1)), cols - 1];
+    }
+
+    grid = new Grid(rows, cols, startPoint, endPoint, pathBuffer, blurBuffer);
     // Add road, buffers, and engage spawner
     grid.addRoad();
     grid.populateBackgroundBuffers();
     spawner = new BoidSpawner(grid.startPoint, cellSize, grid.bfsPath, grid.desirePaths, grid.desirePathBounds, SPAWN_INTERVAL, CYCLE_DURATION, walkers, pathBuffer);
+}
+
+
+/**
+ * p5 calls this when the window is resized. The canvas is resized
+ * immediately, and the scene is rebuilt 300ms after the last resize
+ * event, so dragging a window edge does not rebuild the (expensive)
+ * grid on every intermediate size. Rebuilding restarts the current
+ * scene, which is the cleanest behaviour for a new aspect ratio.
+ */
+function windowResized() {
+    resizeCanvas(windowWidth, windowHeight);
+    if (resizeTimer) {
+        clearTimeout(resizeTimer);
+    }
+    resizeTimer = setTimeout(rebuildForNewSize, 300);
+}
+
+
+function rebuildForNewSize() {
+    resizeTimer = null;
+
+    // Stop the old spawner so its interval does not keep spawning
+    // boids into the discarded walkers array.
+    if (spawner && spawner.intId) {
+        clearInterval(spawner.intId);
+    }
+    walkers = [];
+    time = 0;
+    animProperties.transitionX = 0;
+    animProperties.transitionY = 0;
+    animProperties.gridX = 0;
+    animProperties.gridY = 0;
+
+    // Recreate the full-size buffers for the new canvas size
+    noiseBuffer = createGraphics(width, height);
+    pathBuffer = createGraphics(width, height);
+    transitionBuffer = createGraphics(width, height);
+    blurBuffer = createGraphics(width, height);
+    populateNoiseBuffer();
+
+    if (grid) {
+        grid.forceGarbageCollectBuffers();
+    }
+
+    buildScene(null, null);
 }
 
 
@@ -138,9 +232,11 @@ function transition() {
     }
 
     // Choose a new end point an opposite side from the new start point
-    // Ensure new end point is at least 25 units away for interesting paths
+    // Ensure new end point is far enough away for interesting paths.
+    // The threshold scales with the grid size (see minEndpointDistance),
+    // so it stays reachable on small / portrait grids.
     let dist = 0;
-    while (dist < 25) {
+    while (dist < minEndpointDistance()) {
         if (newEndOnBottom) {
             newEndPoint = [rows - 1, floor(random(1, cols - 1))];
         }
